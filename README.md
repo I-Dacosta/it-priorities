@@ -16,14 +16,14 @@ Next.js 16 (App Router) · TypeScript 6 · Tailwind CSS v4 · shadcn/ui (Base UI
 ## Local development
 
 ```bash
-docker compose up -d          # Postgres on :5432, codex-bridge on :8080
+docker compose up -d          # Postgres on :5432, codex-bridge on :8092 (it listens on 8080 inside the container)
 cp .env.example .env          # if you haven't already
 npx prisma migrate dev
 npx tsx prisma/seed.ts        # seeds the 5 launch users + starting priorities
 npm run dev
 ```
 
-Open <http://localhost:3000>. Since a real Azure AD app registration isn't required for local dev, the sign-in page has a **"Dev only"** email sign-in box below the Microsoft button — enter one of the seeded emails (e.g. `ima.dacosta@aquatiq.com`) and any password; it signs you up on first use. This is compiled out of production builds (`emailAndPassword` is disabled server-side when `NODE_ENV=production`, see `src/lib/auth.ts`).
+Open <http://localhost:3000> (or `npm run dev -- --port 4300` if 3000 is taken, which is what `.claude/launch.json` does). Since a real Azure AD app registration isn't required for local dev, the sign-in page has a **"Dev only"** email sign-in box below the Microsoft button — enter one of the seeded emails (e.g. `ima.dacosta@aquatiq.com`) and any password; it signs you up on first use. This is compiled out of production builds (`emailAndPassword` is disabled server-side when `NODE_ENV=production`, see `src/lib/auth.ts`).
 
 ## Setting up real Microsoft sign-in
 
@@ -91,6 +91,14 @@ Point it at the repo root. Environment variables to set:
 | `NEXT_PUBLIC_APPINSIGHTS_CONNECTION_STRING` | Optional RUM |
 
 Run `npx prisma migrate deploy` against the production database before first use, then seed it once with `npx tsx prisma/seed.ts`.
+
+The live deployment is <https://it-priorities-two.vercel.app>. Its Azure redirect URI — verified against the URL Better Auth actually generates, which is `<baseURL>/api/auth/callback/<providerId>` — is exactly:
+
+```
+https://it-priorities-two.vercel.app/api/auth/callback/microsoft-entra-id
+```
+
+`BETTER_AUTH_SECRET` is not optional: without it Better Auth throws on every request and `/sign-in` takes the whole function down (exit 128), which looks like a build problem but is not one.
 
 ### The bridge (any container host with a volume)
 
