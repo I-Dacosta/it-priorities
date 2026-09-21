@@ -85,7 +85,7 @@ Point it at the repo root. Environment variables to set:
 | --- | --- |
 | `DATABASE_URL` | A reachable hosted Postgres — not `localhost` |
 | `BETTER_AUTH_SECRET` | Fresh value: `openssl rand -base64 32` |
-| `BETTER_AUTH_URL` | The deployment's real URL |
+| `BETTER_AUTH_URL` | The deployment's real URL. Optional on Vercel — falls back to `VERCEL_PROJECT_PRODUCTION_URL`; set it explicitly on any other host, and on Vercel if sign-in should work from a non-production domain |
 | `MICROSOFT_CLIENT_ID` / `_SECRET` / `_TENANT_ID` | From the Azure app registration; sign-in reports itself unconfigured until all three are set |
 | `CODEX_BRIDGE_URL` / `CODEX_BRIDGE_API_KEY` | The bridge's URL and shared secret; omit to ship without the assistant |
 | `NEXT_PUBLIC_APPINSIGHTS_CONNECTION_STRING` | Optional RUM |

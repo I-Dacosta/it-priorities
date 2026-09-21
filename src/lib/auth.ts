@@ -25,7 +25,18 @@ export const isMicrosoftSignInConfigured = Boolean(
   clientId && clientSecret && TENANT_GUID.test(tenantId)
 );
 
+// Fall back to the domain Vercel already knows so a deploy works without
+// BETTER_AUTH_URL being set by hand. Preview deployments resolve to the
+// production domain rather than their own URL, which is the safe direction —
+// accepting an arbitrary request host would need trustedProxyHeaders.
+const baseURL =
+  process.env.BETTER_AUTH_URL?.trim() ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : undefined);
+
 export const auth = betterAuth({
+  ...(baseURL ? { baseURL } : {}),
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // Dev-only escape hatch so the app is testable without a real Azure AD app
   // registration. Excluded from production builds — Microsoft is the only
