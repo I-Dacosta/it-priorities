@@ -100,6 +100,27 @@ https://it-priorities-two.vercel.app/api/auth/callback/microsoft-entra-id
 
 `BETTER_AUTH_SECRET` is not optional: without it Better Auth throws on every request and `/sign-in` takes the whole function down (exit 128), which looks like a build problem but is not one.
 
+### Database (current production setup)
+
+Production Postgres is **Neon via the Vercel Marketplace**, free plan, region `fra1` (`eu-central-1`, Frankfurt — EU residency, which matters given NIS2 is on this very board). It's connected to Production and Preview only, so local development keeps using the Docker Postgres.
+
+```bash
+vercel integration add neon --plan free_v3 -m region=fra1 -m auth=false \
+  -n it-priorities-db -e production -e preview
+```
+
+Neon's own auth add-on is deliberately off — Better Auth plus Entra ID already owns identity here.
+
+The integration injects both `DATABASE_URL` (pooled, through PgBouncer) and `DATABASE_URL_UNPOOLED` (direct). Run migrations against the **unpooled** one; Prisma Migrate takes advisory locks that a transaction-mode pooler won't hold:
+
+```bash
+DATABASE_URL="$DATABASE_URL_UNPOOLED" npx prisma migrate deploy
+DATABASE_URL="$DATABASE_URL_UNPOOLED" npx tsx prisma/seed.ts
+```
+
+The running app uses the pooled `DATABASE_URL`, which is the right choice for serverless. Note that changing any environment variable needs a **redeploy** to take effect — Vercel injects them at build time, so setting a variable alone changes nothing.
+
+
 ### The bridge (any container host with a volume)
 
 ```bash
