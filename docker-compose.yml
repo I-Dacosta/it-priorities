@@ -11,27 +11,5 @@ services:
     volumes:
       - it-priorities-db:/var/lib/postgresql/data
 
-  # The assistant's Codex subprocess host. The Next.js app talks to this over
-  # HTTP, so the app itself stays deployable to serverless platforms.
-  codex-bridge:
-    build: ./services/codex-bridge
-    restart: unless-stopped
-    # auth.openai.com resolves to IPv6 too, but Docker's default bridge has no
-    # IPv6 route — the Rust codex CLI then fails where Node's happy-eyeballs
-    # fetch falls back to IPv4. Stop the resolver handing out AAAA at all.
-    dns_opt:
-      - no-aaaa
-    sysctls:
-      net.ipv6.conf.all.disable_ipv6: "1"
-    environment:
-      CODEX_BRIDGE_API_KEY: local-dev-bridge-key
-      CODEX_SUBSCRIPTION_HOME: /data/codex-subscriptions
-    ports:
-      # 8080 is commonly taken on dev machines; the container still listens on 8080.
-      - "8092:8080"
-    volumes:
-      - it-priorities-codex:/data/codex-subscriptions
-
 volumes:
   it-priorities-db:
-  it-priorities-codex:

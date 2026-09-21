@@ -4,19 +4,19 @@ Aquatiq's shared board for what IT is currently prioritizing. Two lanes — **Ro
 
 ## Stack
 
-Next.js 16 (App Router) · TypeScript 6 · Tailwind CSS v4 · shadcn/ui (Base UI) · Better Auth (Microsoft Entra ID) · Prisma ORM 7 + Postgres · `@dnd-kit/react` · `@assistant-ui/react` · Application Insights (optional)
+Next.js 16 (App Router) · TypeScript 6 · Tailwind CSS v4 · shadcn/ui (Base UI) · Better Auth (Microsoft Entra ID) · Prisma ORM 7 + Postgres (Neon) · `@dnd-kit/react` · `@assistant-ui/react` · Vercel Sandbox · Application Insights (optional)
 
 ## Prerequisites
 
 - Node.js 24+
-- Docker (the included `docker-compose.yml` runs Postgres and the codex-bridge locally)
+- Docker (the included `docker-compose.yml` runs Postgres locally)
 - For real Microsoft sign-in: an Azure AD (Entra ID) App Registration — see below. Not needed for local dev; a dev-only email sign-in is built in (see "Local development" below).
-- For the AI assistant: each user's own ChatGPT/OpenAI account. The [`@openai/codex`](https://www.npmjs.com/package/@openai/codex) CLI is baked into the codex-bridge image, so you don't install it yourself.
+- For the AI assistant: each user's own ChatGPT/OpenAI account, plus Vercel Sandbox access. Nothing to install — the [`@openai/codex`](https://www.npmjs.com/package/@openai/codex) CLI already ships in the sandbox image.
 
 ## Local development
 
 ```bash
-docker compose up -d          # Postgres on :5432, codex-bridge on :8092 (it listens on 8080 inside the container)
+docker compose up -d          # Postgres on :5432
 cp .env.example .env          # if you haven't already
 npx prisma migrate dev
 npx tsx prisma/seed.ts        # seeds the 5 launch users + starting priorities
@@ -41,29 +41,26 @@ Open <http://localhost:3000> (or `npm run dev -- --port 4300` if 3000 is taken, 
 
 Any signed-in user can add or remove people from **Users** in the nav — no code changes needed. Only `@aquatiq.com` emails are accepted. Removing someone takes effect immediately, even if they have an active session, since every request re-checks the allow-list (see `src/lib/auth-guard.ts`).
 
-## Architecture: app + codex-bridge
+## The AI assistant
 
-The app is split in two, mirroring how CoresSystem separates its gateway from Integration Core:
+Each person connects their **own** Codex/ChatGPT subscription in **Settings → Assistant** — nobody's usage is billed to anyone else, and no Codex token ever reaches this app or its database.
 
-| Piece | Runs on | Responsibility |
+Everything runs on Vercel. Connecting a subscription needs three things a serverless function doesn't have — a subprocess, a filesystem that outlives a request, and login state spanning several requests — so each user gets their own **persistent [Vercel Sandbox](https://vercel.com/docs/sandbox)** (`codex-<userId>`):
+
+| Piece | Where | Responsibility |
 | --- | --- | --- |
-| **Next.js app** (`src/`) | Anywhere, incl. Vercel | Sign-in, board, users, and a thin authenticated proxy for the assistant |
-| **codex-bridge** (`services/codex-bridge/`) | A persistent host with a disk | Owns the `codex` CLI subprocesses and each user's credentials |
+| Next.js app (`src/`) | Vercel functions | Sign-in, board, users; opens and drives each user's sandbox |
+| `src/lib/codex/driver.ts` | Inside the user's sandbox | Speaks JSON-RPC over stdio to the real `codex` CLI |
 
-That split exists because connecting a Codex subscription needs a subprocess plus in-memory login state that survives several HTTP requests, and each person's credential lives on local disk — none of which serverless platforms support. Keeping that in a separate service lets the app itself stay serverless-deployable.
+A sandbox snapshots its filesystem when it stops and restores it on resume, so the user's `CODEX_HOME` — and the `auth.json` the codex CLI writes into it — survives between sessions, exactly as a mounted volume would. The app never reads that credential; it only ever asks whether the file exists.
 
-They talk over HTTP with a shared secret (`X-Internal-API-Key`), the same pattern Integration Core uses.
+The driver runs the official CLI in "app-server" mode, following [OpenAI's documented protocol](https://developers.openai.com/codex/app-server) — no reimplemented OAuth and no undocumented endpoints. It is stored as a string in `driver.ts` (rather than a file) so it is always bundled into the function, and rewritten into the sandbox on every call so it can't lag behind deployed code.
 
-### The AI assistant
+Sign-in is two-phase: `POST /api/ai/codex/connect` starts the device-code flow and returns immediately; `GET` on the same route reports `preparing` → `pending` (with the code) → `connected`. Both are keyed by the signed-in user, so nobody can poll anyone else's login.
 
-Each person connects their **own** Codex/ChatGPT subscription in **Settings → Assistant** — nobody's usage is billed to anyone else. The bridge spawns the real `codex` CLI in "app-server" mode per user (JSON-RPC over stdio, following [OpenAI's documented protocol](https://developers.openai.com/codex/app-server)), isolated to a per-user credential directory under `CODEX_SUBSCRIPTION_HOME`. No Codex token ever reaches this app's database.
+`AllowedUser.codexConnectedAt` caches *whether* a credential exists, purely so rendering the assistant doesn't have to wake a microVM. The sandbox stays the source of truth — a stale flag surfaces as a reconnect prompt on the next turn.
 
-If `CODEX_BRIDGE_URL`/`CODEX_BRIDGE_API_KEY` aren't set, the app still builds and runs — the Assistant page just reports itself as unavailable on that deployment.
-
-**Deploying the bridge** (`services/codex-bridge/Dockerfile`) needs:
-- Persistent disk mounted at `CODEX_SUBSCRIPTION_HOME`, or everyone is signed out on each redeploy (on Azure App Service only `/home` persists)
-- A single instance — the pending-login map is process-local, so multi-instance needs sticky sessions at minimum
-- Network reachability from the app, and a strong `CODEX_BRIDGE_API_KEY` shared between the two
+There's nothing to configure: the SDK authenticates with the deployment's own OIDC token. Locally, run `vercel env pull` once so `.env.local` carries `VERCEL_OIDC_TOKEN`; without it the Assistant page reports itself unavailable and the rest of the app is unaffected.
 
 ## Database
 
@@ -85,9 +82,9 @@ Point it at the repo root. Environment variables to set:
 | --- | --- |
 | `DATABASE_URL` | A reachable hosted Postgres — not `localhost` |
 | `BETTER_AUTH_SECRET` | Fresh value: `openssl rand -base64 32` |
-| `BETTER_AUTH_URL` | The deployment's real URL. Optional on Vercel — falls back to `VERCEL_PROJECT_PRODUCTION_URL`; set it explicitly on any other host, and on Vercel if sign-in should work from a non-production domain |
+| `BETTER_AUTH_URL` | The deployment's real URL, including a custom domain once one exists. Falls back to `VERCEL_PROJECT_PRODUCTION_URL`. Getting this wrong sends users to the wrong `redirect_uri` |
 | `MICROSOFT_CLIENT_ID` / `_SECRET` / `_TENANT_ID` | From the Azure app registration; sign-in reports itself unconfigured until all three are set |
-| `CODEX_BRIDGE_URL` / `CODEX_BRIDGE_API_KEY` | The bridge's URL and shared secret; omit to ship without the assistant |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | Optional, comma-separated. Only needed for hosts beyond `BETTER_AUTH_URL` and the Vercel-assigned domain |
 | `NEXT_PUBLIC_APPINSIGHTS_CONNECTION_STRING` | Optional RUM |
 
 Run `npx prisma migrate deploy` against the production database before first use, then seed it once with `npx tsx prisma/seed.ts`.
@@ -121,21 +118,10 @@ DATABASE_URL="$DATABASE_URL_UNPOOLED" npx tsx prisma/seed.ts
 The running app uses the pooled `DATABASE_URL`, which is the right choice for serverless. Note that changing any environment variable needs a **redeploy** to take effect — Vercel injects them at build time, so setting a variable alone changes nothing.
 
 
-### The bridge (any container host with a volume)
-
-```bash
-cd services/codex-bridge
-docker build -t codex-bridge .
-docker run -p 8080:8080 \
-  -e CODEX_BRIDGE_API_KEY=<same secret as the app> \
-  -v codex-subscriptions:/data/codex-subscriptions \
-  codex-bridge
-```
-
-Keep it on one instance, give it a persistent volume, and don't expose it publicly beyond what the app needs to reach.
-
 ## Known limitations (v1)
 
 - No live sync between two open browser tabs — the board updates on next navigation, not in real time. Fine at this scale (5 people, 2 lanes); a future iteration could add polling or SSE.
 - The seed data's grouping of the original priorities list into 10 cards is a best-effort read of a flat bullet list — edit freely in the app if anything should be split, merged, or reassigned.
 - Application Insights RUM is wired up but inert until `NEXT_PUBLIC_APPINSIGHTS_CONNECTION_STRING` is set.
+- The first assistant turn after a quiet spell pays a second or two to resume the sandbox; subsequent turns reuse the running one until it lapses.
+- One sandbox per user is deliberate. It is also the billing unit: Active CPU while a turn runs, plus provisioned memory until the session times out.

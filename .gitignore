@@ -44,5 +44,3 @@ next-env.d.ts
 # prisma generated client
 /src/generated/
 
-# per-user Codex CLI credentials (never commit real auth state)
-/.codex-subscriptions/

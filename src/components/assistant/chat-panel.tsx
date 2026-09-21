@@ -55,8 +55,8 @@ export function ChatPanel() {
     return (
       <EmptyState title="Assistant not available here">
         <p>
-          The assistant runs each person&apos;s own Codex subscription through the codex-bridge
-          service, which needs a persistent host. This deployment doesn&apos;t have one configured.
+          The assistant runs each person&apos;s own Codex subscription in a Vercel Sandbox, which
+          needs this deployment&apos;s OIDC token. It isn&apos;t available here.
         </p>
       </EmptyState>
     );

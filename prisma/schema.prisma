@@ -22,6 +22,10 @@ model AllowedUser {
   email               String    @unique
   name                String?
   preferredCodexModel String?
+  // Cached mirror of whether a Codex credential exists in the user's sandbox,
+  // so rendering the assistant UI doesn't have to resume a microVM. The
+  // credential itself never leaves the sandbox.
+  codexConnectedAt    DateTime?
   disabledAt          DateTime?
   createdAt           DateTime  @default(now())
   lastSignInAt        DateTime?

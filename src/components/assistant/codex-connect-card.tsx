@@ -16,12 +16,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { updatePreferredCodexModel } from "@/server/actions/allowed-users";
 
-type Login = { loginId: string; verificationUrl: string; userCode: string; expiresAt: number };
+/**
+ * Connecting runs in two phases: the sandbox has to boot (and, the first time,
+ * install the codex CLI) before OpenAI hands back a device code. The dialog
+ * opens immediately on "preparing" so the click feels answered, then swaps in
+ * the code once polling reports it.
+ */
+type ConnectState =
+  | { phase: "preparing" }
+  | { phase: "pending"; verificationUrl: string; userCode: string };
 
 export function CodexConnectCard({ initialModel }: { initialModel: string | null }) {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [configured, setConfigured] = useState(true);
-  const [login, setLogin] = useState<Login | null>(null);
+  const [connectState, setConnectState] = useState<ConnectState | null>(null);
   const [pending, setPending] = useState(false);
   const [model, setModel] = useState(initialModel ?? "");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -53,22 +61,32 @@ export function CodexConnectCard({ initialModel }: { initialModel: string | null
     setPending(true);
     try {
       const res = await fetch("/api/ai/codex/connect", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Couldn't start sign-in.");
-      setLogin(data);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? "Couldn't start sign-in.");
+      }
+      setConnectState({ phase: "preparing" });
 
       pollRef.current = setInterval(async () => {
-        const pollRes = await fetch(`/api/ai/codex/connect/${data.loginId}`);
-        const pollData = await pollRes.json();
-        if (pollData.status === "connected") {
+        const pollRes = await fetch("/api/ai/codex/connect");
+        const data = await pollRes.json().catch(() => null);
+        if (!pollRes.ok || !data) return;
+
+        if (data.status === "pending" && data.verificationUrl && data.userCode) {
+          setConnectState({
+            phase: "pending",
+            verificationUrl: data.verificationUrl,
+            userCode: data.userCode,
+          });
+        } else if (data.status === "connected") {
           stopPolling();
-          setLogin(null);
+          setConnectState(null);
           setConnected(true);
           toast.success("Codex subscription connected.");
-        } else if (pollData.status === "failed" || pollData.status === "expired" || pollData.status === "not_found") {
+        } else if (["failed", "expired", "not_found"].includes(data.status)) {
           stopPolling();
-          setLogin(null);
-          toast.error(pollData.message ?? "Sign-in didn't complete. Try again.");
+          setConnectState(null);
+          toast.error(data.message ?? "Sign-in didn't complete. Try again.");
         }
       }, 2000);
     } catch (error) {
@@ -76,6 +94,11 @@ export function CodexConnectCard({ initialModel }: { initialModel: string | null
     } finally {
       setPending(false);
     }
+  }
+
+  function handleDialogClose() {
+    stopPolling();
+    setConnectState(null);
   }
 
   async function handleDisconnect() {
@@ -139,8 +162,8 @@ export function CodexConnectCard({ initialModel }: { initialModel: string | null
           )}
           {!configured ? (
             <p className="text-xs text-muted-foreground">
-              Connecting needs the codex-bridge service (CODEX_BRIDGE_URL / CODEX_BRIDGE_API_KEY),
-              which runs on a persistent host rather than serverless.
+              The assistant runs your Codex subscription in a Vercel Sandbox, which needs the
+              deployment&apos;s OIDC token. Locally, run <code>vercel env pull</code> once.
             </p>
           ) : null}
         </CardFooter>
@@ -172,31 +195,40 @@ export function CodexConnectCard({ initialModel }: { initialModel: string | null
         </CardContent>
       </Card>
 
-      <Dialog open={login !== null} onOpenChange={(open) => !open && setLogin(null)}>
+      <Dialog open={connectState !== null} onOpenChange={(open) => !open && handleDialogClose()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Sign in to ChatGPT</DialogTitle>
             <DialogDescription>
-              Open the link below and enter the code to connect your subscription.
+              {connectState?.phase === "pending"
+                ? "Open the link below and enter the code to connect your subscription."
+                : "Starting your private sandbox — this takes a few seconds the first time."}
             </DialogDescription>
           </DialogHeader>
-          {login ? (
-            <div className="flex flex-col items-center gap-4 py-4">
-              <a
-                href={login.verificationUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm font-medium text-primary underline underline-offset-4"
-              >
-                {login.verificationUrl}
-              </a>
-              <CodeChip code={login.userCode} />
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex flex-col items-center gap-4 py-4">
+            {connectState?.phase === "pending" ? (
+              <>
+                <a
+                  href={connectState.verificationUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm font-medium text-primary underline underline-offset-4"
+                >
+                  {connectState.verificationUrl}
+                </a>
+                <CodeChip code={connectState.userCode} />
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  Waiting for sign-in…
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
-                Waiting for sign-in…
+                Preparing…
               </div>
-            </div>
-          ) : null}
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </>
