@@ -1,4 +1,11 @@
 FROM node:24-slim AS base
+# node:*-slim ships no system CA bundle. Node bundles its own, but the Rust
+# codex CLI uses the system store — without this every TLS handshake it makes
+# fails as a bare "error sending request".
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 # The Codex CLI is the whole point of this service; it needs Node 22+.
 RUN npm install -g @openai/codex
 

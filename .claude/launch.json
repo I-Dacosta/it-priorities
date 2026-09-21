@@ -4,8 +4,8 @@
     {
       "name": "it-priorities-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000
+      "runtimeArgs": ["run", "dev", "--", "--port", "4300"],
+      "port": 4300
     }
   ]
 }
