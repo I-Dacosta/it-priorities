@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentAllowedUser } from "@/lib/auth-guard";
-import { pollLogin } from "@/lib/codex/manager";
+import { pollLogin } from "@/lib/codex/bridge-client";
 
 export const runtime = "nodejs";
 
@@ -12,6 +12,12 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { loginId } = await params;
-  const result = await pollLogin(loginId);
-  return NextResponse.json(result);
+  try {
+    return NextResponse.json(await pollLogin(loginId));
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Couldn't check the sign-in status." },
+      { status: 502 }
+    );
+  }
 }

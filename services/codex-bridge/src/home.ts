@@ -1,5 +1,3 @@
-import "server-only";
-
 import path from "node:path";
 import fs from "node:fs";
 
@@ -9,17 +7,24 @@ function root() {
 }
 
 /**
- * Resolves the isolated CODEX_HOME directory for one allowed user. The
- * directory name is always a trusted Prisma cuid (never user input), but the
- * containment check is kept anyway as defense in depth.
+ * Resolves the isolated CODEX_HOME directory for one user.
+ *
+ * The id arrives over HTTP, so it is validated as a strict opaque token
+ * before it ever reaches the filesystem — the containment check below is a
+ * second line of defense, not the only one.
  */
-export function codexHomeFor(allowedUserId: string): string {
+export function codexHomeFor(userId: string): string {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(userId)) {
+    throw new Error("Invalid user id.");
+  }
+
   const base = root();
-  const dir = path.join(base, allowedUserId);
+  const dir = path.join(base, userId);
   const rel = path.relative(base, dir);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+  if (rel !== userId || rel.startsWith("..") || path.isAbsolute(rel)) {
     throw new Error("Resolved Codex home escapes the configured root.");
   }
+
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

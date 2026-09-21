@@ -1,12 +1,10 @@
-import "server-only";
-
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { nanoid } from "nanoid";
 
-import { AppServerClient, startAppServer } from "@/lib/codex/app-server-client";
-import { codexHomeFor, hasPersistedAuth } from "@/lib/codex/home";
+import { AppServerClient, startAppServer } from "./app-server-client.js";
+import { codexHomeFor, hasPersistedAuth } from "./home.js";
 
 export class ReauthenticationRequiredError extends Error {
   constructor() {
@@ -24,7 +22,7 @@ type PendingLogin = {
   verificationUrl: string;
   userCode: string;
   expiresAt: number;
-  timeout: ReturnType<typeof setTimeout>;
+  timeout: NodeJS.Timeout;
   unsubscribe: () => void;
 };
 
@@ -35,15 +33,26 @@ function codexCommand() {
   return process.env.CODEX_APP_SERVER_COMMAND?.trim() || "codex";
 }
 
-// Fast Refresh reloads this module often in dev; stash the map on globalThis
-// so an in-flight login's child process isn't orphaned by losing its
-// reference. A full `next dev` restart still kills it — the child process's
-// parent is gone either way, and that's an accepted dev-mode limitation.
-const globalForCodex = globalThis as unknown as { __codexPendingLogins?: Map<string, PendingLogin> };
-const pendingLogins = globalForCodex.__codexPendingLogins ?? new Map<string, PendingLogin>();
-if (process.env.NODE_ENV !== "production") globalForCodex.__codexPendingLogins = pendingLogins;
+const pendingLogins = new Map<string, PendingLogin>();
 
-export type DeviceLogin = { loginId: string; verificationUrl: string; userCode: string; expiresAt: number };
+function cleanupLogin(loginId: string, pending: PendingLogin) {
+  clearTimeout(pending.timeout);
+  pending.unsubscribe();
+  pending.client.close();
+  pendingLogins.delete(loginId);
+}
+
+/** Kills any in-flight login subprocesses so a redeploy leaves no zombies. */
+export function shutdown() {
+  for (const [loginId, pending] of pendingLogins) cleanupLogin(loginId, pending);
+}
+
+export type DeviceLogin = {
+  loginId: string;
+  verificationUrl: string;
+  userCode: string;
+  expiresAt: number;
+};
 
 export async function startLogin(userId: string): Promise<DeviceLogin> {
   const codeHome = codexHomeFor(userId);
@@ -81,9 +90,7 @@ export async function startLogin(userId: string): Promise<DeviceLogin> {
     const pending = pendingLogins.get(loginId);
     if (pending && pending.status === "pending") {
       pending.status = "expired";
-      pending.unsubscribe();
-      pending.client.close();
-      pendingLogins.delete(loginId);
+      cleanupLogin(loginId, pending);
     }
   }, LOGIN_TTL_MS);
 
@@ -120,14 +127,14 @@ export async function pollLogin(loginId: string): Promise<LoginPollResult> {
     }
   }
 
-  if (pending.status === "connected" || pending.status === "failed" || pending.status === "expired") {
-    clearTimeout(pending.timeout);
-    pending.unsubscribe();
-    pending.client.close();
-    pendingLogins.delete(loginId);
+  const status = pending.status;
+  const message = pending.message;
+
+  if (status === "connected" || status === "failed" || status === "expired") {
+    cleanupLogin(loginId, pending);
   }
 
-  return { status: pending.status, message: pending.message };
+  return { status, message };
 }
 
 export async function disconnect(userId: string): Promise<void> {
@@ -148,9 +155,7 @@ export function isConnected(userId: string): boolean {
 export type CodexChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
 function renderPrompt(messages: CodexChatMessage[]): string {
-  return messages
-    .map((m) => `${m.role.toUpperCase()}:\n${m.content}`)
-    .join("\n\n");
+  return messages.map((m) => `${m.role.toUpperCase()}:\n${m.content}`).join("\n\n");
 }
 
 const BASE_INSTRUCTIONS =

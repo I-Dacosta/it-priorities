@@ -8,6 +8,23 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+const TENANT_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const clientId = process.env.MICROSOFT_CLIENT_ID?.trim() ?? "";
+const clientSecret = process.env.MICROSOFT_CLIENT_SECRET?.trim() ?? "";
+const tenantId = process.env.MICROSOFT_TENANT_ID?.trim() ?? "";
+
+/**
+ * microsoftEntraId() throws on a missing/invalid tenant GUID, which would fail
+ * the whole build when the Azure app registration isn't wired up yet. Register
+ * it only when all three values are actually present, so a deployment without
+ * them still builds and runs — the sign-in page just reports it as
+ * unconfigured instead of the app refusing to start.
+ */
+export const isMicrosoftSignInConfigured = Boolean(
+  clientId && clientSecret && TENANT_GUID.test(tenantId)
+);
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // Dev-only escape hatch so the app is testable without a real Azure AD app
@@ -17,15 +34,9 @@ export const auth = betterAuth({
     enabled: process.env.NODE_ENV !== "production",
   },
   plugins: [
-    genericOAuth({
-      config: [
-        microsoftEntraId({
-          clientId: process.env.MICROSOFT_CLIENT_ID ?? "",
-          clientSecret: process.env.MICROSOFT_CLIENT_SECRET ?? "",
-          tenantId: process.env.MICROSOFT_TENANT_ID ?? "",
-        }),
-      ],
-    }),
+    ...(isMicrosoftSignInConfigured
+      ? [genericOAuth({ config: [microsoftEntraId({ clientId, clientSecret, tenantId })] })]
+      : []),
     // Must be last: lets Server Actions/Components set auth cookies directly.
     nextCookies(),
   ],

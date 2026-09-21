@@ -9,15 +9,15 @@ Next.js 16 (App Router) · TypeScript 6 · Tailwind CSS v4 · shadcn/ui (Base UI
 ## Prerequisites
 
 - Node.js 24+
-- A Postgres database (a `docker-compose.yml` is included for local dev)
+- Docker (the included `docker-compose.yml` runs Postgres and the codex-bridge locally)
 - For real Microsoft sign-in: an Azure AD (Entra ID) App Registration — see below. Not needed for local dev; a dev-only email sign-in is built in (see "Local development" below).
-- For the AI assistant: the [`@openai/codex`](https://www.npmjs.com/package/@openai/codex) CLI installed and on `PATH` (`npm install -g @openai/codex`, requires Node 22+), and each user's own ChatGPT/OpenAI account.
+- For the AI assistant: each user's own ChatGPT/OpenAI account. The [`@openai/codex`](https://www.npmjs.com/package/@openai/codex) CLI is baked into the codex-bridge image, so you don't install it yourself.
 
 ## Local development
 
 ```bash
-docker compose up -d          # starts Postgres on localhost:5432
-cp .env.example .env          # if you haven't already — the tracked .env already has working local defaults
+docker compose up -d          # Postgres on :5432, codex-bridge on :8080
+cp .env.example .env          # if you haven't already
 npx prisma migrate dev
 npx tsx prisma/seed.ts        # seeds the 5 launch users + starting priorities
 npm run dev
@@ -41,16 +41,29 @@ Open <http://localhost:3000>. Since a real Azure AD app registration isn't requi
 
 Any signed-in user can add or remove people from **Users** in the nav — no code changes needed. Only `@aquatiq.com` emails are accepted. Removing someone takes effect immediately, even if they have an active session, since every request re-checks the allow-list (see `src/lib/auth-guard.ts`).
 
-## The AI assistant
+## Architecture: app + codex-bridge
 
-Each person connects their **own** Codex/ChatGPT subscription in **Settings → Assistant** — nobody's usage is billed to anyone else. This works by spawning the real `codex` CLI in "app-server" mode per user (JSON-RPC over stdio, following [OpenAI's documented protocol](https://developers.openai.com/codex/app-server)), isolated to a per-user credential directory (`CODEX_SUBSCRIPTION_HOME`, default `./.codex-subscriptions`) that never touches the app's database — this mirrors how Aquatiq's own CoresSystem Integration Core brokers Codex subscriptions.
+The app is split in two, mirroring how CoresSystem separates its gateway from Integration Core:
 
-**Deployment implication:** because connecting requires a subprocess + in-memory login state to survive across a few HTTP requests, and each user's credential lives on local disk, this cannot run on serverless/edge platforms (e.g. plain Vercel functions). It needs:
-- A persistent Node.js server process (the included `Dockerfile`, a VM, or a container host)
-- Persistent disk for `CODEX_SUBSCRIPTION_HOME` that survives restarts (on Azure App Service, only `/home` persists — point the env var there)
-- A single instance (the pending-login map is process-local; a load-balanced multi-instance deployment needs sticky sessions at minimum)
+| Piece | Runs on | Responsibility |
+| --- | --- | --- |
+| **Next.js app** (`src/`) | Anywhere, incl. Vercel | Sign-in, board, users, and a thin authenticated proxy for the assistant |
+| **codex-bridge** (`services/codex-bridge/`) | A persistent host with a disk | Owns the `codex` CLI subprocesses and each user's credentials |
 
-If the `codex` binary isn't installed or isn't on `PATH`, connecting fails with a clear error instead of crashing the server.
+That split exists because connecting a Codex subscription needs a subprocess plus in-memory login state that survives several HTTP requests, and each person's credential lives on local disk — none of which serverless platforms support. Keeping that in a separate service lets the app itself stay serverless-deployable.
+
+They talk over HTTP with a shared secret (`X-Internal-API-Key`), the same pattern Integration Core uses.
+
+### The AI assistant
+
+Each person connects their **own** Codex/ChatGPT subscription in **Settings → Assistant** — nobody's usage is billed to anyone else. The bridge spawns the real `codex` CLI in "app-server" mode per user (JSON-RPC over stdio, following [OpenAI's documented protocol](https://developers.openai.com/codex/app-server)), isolated to a per-user credential directory under `CODEX_SUBSCRIPTION_HOME`. No Codex token ever reaches this app's database.
+
+If `CODEX_BRIDGE_URL`/`CODEX_BRIDGE_API_KEY` aren't set, the app still builds and runs — the Assistant page just reports itself as unavailable on that deployment.
+
+**Deploying the bridge** (`services/codex-bridge/Dockerfile`) needs:
+- Persistent disk mounted at `CODEX_SUBSCRIPTION_HOME`, or everyone is signed out on each redeploy (on Azure App Service only `/home` persists)
+- A single instance — the pending-login map is process-local, so multi-instance needs sticky sessions at minimum
+- Network reachability from the app, and a strong `CODEX_BRIDGE_API_KEY` shared between the two
 
 ## Database
 
@@ -64,16 +77,33 @@ npx tsx prisma/seed.ts                         # re-run the seed (upserts users,
 
 ## Deploying
 
+### The app (Vercel or any Next.js host)
+
+Point it at the repo root. Environment variables to set:
+
+| Variable | Notes |
+| --- | --- |
+| `DATABASE_URL` | A reachable hosted Postgres — not `localhost` |
+| `BETTER_AUTH_SECRET` | Fresh value: `openssl rand -base64 32` |
+| `BETTER_AUTH_URL` | The deployment's real URL |
+| `MICROSOFT_CLIENT_ID` / `_SECRET` / `_TENANT_ID` | From the Azure app registration; sign-in reports itself unconfigured until all three are set |
+| `CODEX_BRIDGE_URL` / `CODEX_BRIDGE_API_KEY` | The bridge's URL and shared secret; omit to ship without the assistant |
+| `NEXT_PUBLIC_APPINSIGHTS_CONNECTION_STRING` | Optional RUM |
+
+Run `npx prisma migrate deploy` against the production database before first use, then seed it once with `npx tsx prisma/seed.ts`.
+
+### The bridge (any container host with a volume)
+
 ```bash
-docker build -t it-priorities .
-docker run -p 3000:3000 \
-  -e DATABASE_URL=... -e BETTER_AUTH_SECRET=... -e BETTER_AUTH_URL=... \
-  -e MICROSOFT_CLIENT_ID=... -e MICROSOFT_CLIENT_SECRET=... -e MICROSOFT_TENANT_ID=... \
-  -v codex-subscriptions:/app/.codex-subscriptions \
-  it-priorities
+cd services/codex-bridge
+docker build -t codex-bridge .
+docker run -p 8080:8080 \
+  -e CODEX_BRIDGE_API_KEY=<same secret as the app> \
+  -v codex-subscriptions:/data/codex-subscriptions \
+  codex-bridge
 ```
 
-Run `npx prisma migrate deploy` against the production database before (or via an init container/job) the app starts.
+Keep it on one instance, give it a persistent volume, and don't expose it publicly beyond what the app needs to reach.
 
 ## Known limitations (v1)
 

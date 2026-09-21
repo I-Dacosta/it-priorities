@@ -1,5 +1,3 @@
-import "server-only";
-
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 
@@ -31,12 +29,20 @@ export class AppServerClient {
     this.child = spawn(command, args, { env });
 
     // A missing binary (ENOENT) or other spawn failure surfaces as an async
-    // 'error' event. Without a listener this crashes the whole Node process,
-    // not just the request that triggered it.
+    // 'error' event. Without a listener this crashes the whole process, not
+    // just the request that triggered it.
     this.child.on("error", (error) => {
-      this.failAllPending(error instanceof Error ? error : new Error(String(error)));
+      const isMissingBinary = (error as NodeJS.ErrnoException)?.code === "ENOENT";
+      const wrapped = isMissingBinary
+        ? new Error(
+            `The codex CLI wasn't found (tried "${command}"). Install it with \`npm i -g @openai/codex\` or set CODEX_APP_SERVER_COMMAND to its path.`
+          )
+        : error instanceof Error
+          ? error
+          : new Error(String(error));
+      this.closeError = wrapped;
       this.closed = true;
-      this.closeError = error instanceof Error ? error : new Error(String(error));
+      this.failAllPending(wrapped);
     });
 
     this.child.stderr.resume(); // never surface provider stderr in logs or to clients
@@ -143,10 +149,16 @@ export class AppServerClient {
 }
 
 export async function startAppServer(command: string, codeHome: string): Promise<AppServerClient> {
-  const client = new AppServerClient(command, ["app-server", "-c", 'cli_auth_credentials_store="file"'], codeHome);
-  await client.call("initialize", {
-    clientInfo: { name: "it_priorities", title: "IT Priorities", version: "1" },
-  }, 15_000);
+  const client = new AppServerClient(
+    command,
+    ["app-server", "-c", 'cli_auth_credentials_store="file"'],
+    codeHome
+  );
+  await client.call(
+    "initialize",
+    { clientInfo: { name: "it_priorities_codex_bridge", title: "IT Priorities Codex Bridge", version: "1" } },
+    15_000
+  );
   client.notify("initialized", {});
   return client;
 }

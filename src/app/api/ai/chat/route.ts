@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentAllowedUser } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
-import { invoke, isConnected, ReauthenticationRequiredError } from "@/lib/codex/manager";
+import { BridgeNotConfiguredError, inferStream } from "@/lib/codex/bridge-client";
 
 export const runtime = "nodejs";
 
@@ -30,52 +30,38 @@ export async function POST(request: Request) {
   const user = await getCurrentAllowedUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!isConnected(user.id)) {
-    return NextResponse.json(
-      { error: "Connect your Codex subscription in Settings → Assistant first." },
-      { status: 409 }
-    );
-  }
-
   const parsed = bodySchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const boardContext = await buildBoardContext();
-  const model = user.preferredCodexModel?.trim() || "gpt-5-codex";
+  try {
+    const upstream = await inferStream(
+      {
+        userId: user.id,
+        model: user.preferredCodexModel?.trim() || "gpt-5-codex",
+        messages: parsed.data.messages,
+        boardContext: await buildBoardContext(),
+      },
+      request.signal
+    );
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (payload: Record<string, unknown>) => {
-        controller.enqueue(encoder.encode(JSON.stringify(payload) + "\n"));
-      };
-      try {
-        await invoke({
-          userId: user.id,
-          model,
-          messages: parsed.data.messages,
-          boardContext,
-          signal: request.signal,
-          onDelta: (delta) => send({ type: "delta", text: delta }),
-        });
-      } catch (error) {
-        if (error instanceof ReauthenticationRequiredError) {
-          send({ type: "error", message: error.message, code: "reauthentication_required" });
-        } else {
-          send({
-            type: "error",
-            message: error instanceof Error ? error.message : "The assistant couldn't respond.",
-          });
-        }
-      } finally {
-        controller.close();
-      }
-    },
-  });
+    if (!upstream.ok || !upstream.body) {
+      const detail = (await upstream.json().catch(() => null)) as { error?: string } | null;
+      return NextResponse.json(
+        { error: detail?.error ?? "The assistant couldn't respond." },
+        { status: upstream.status === 409 ? 409 : 502 }
+      );
+    }
 
-  return new Response(stream, {
-    headers: { "Content-Type": "application/x-ndjson" },
-  });
+    // The bridge already speaks the NDJSON delta format the client expects.
+    return new Response(upstream.body, {
+      headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "The assistant couldn't respond." },
+      { status: error instanceof BridgeNotConfiguredError ? 503 : 502 }
+    );
+  }
 }

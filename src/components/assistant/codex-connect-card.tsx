@@ -20,6 +20,7 @@ type Login = { loginId: string; verificationUrl: string; userCode: string; expir
 
 export function CodexConnectCard({ initialModel }: { initialModel: string | null }) {
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [configured, setConfigured] = useState(true);
   const [login, setLogin] = useState<Login | null>(null);
   const [pending, setPending] = useState(false);
   const [model, setModel] = useState(initialModel ?? "");
@@ -28,7 +29,10 @@ export function CodexConnectCard({ initialModel }: { initialModel: string | null
   function refreshStatus() {
     return fetch("/api/ai/codex/connection")
       .then((res) => res.json())
-      .then((data) => setConnected(Boolean(data.connected)));
+      .then((data) => {
+        setConnected(Boolean(data.connected));
+        setConfigured(data.configured !== false);
+      });
   }
 
   useEffect(() => {
@@ -113,20 +117,32 @@ export function CodexConnectCard({ initialModel }: { initialModel: string | null
             style={{ background: connected ? "var(--brand-green-foreground)" : "var(--muted-foreground)" }}
           />
           <span className="text-sm text-foreground">
-            {connected === null ? "Checking…" : connected ? "Connected" : "Not connected"}
+            {!configured
+              ? "Not available on this deployment"
+              : connected === null
+                ? "Checking…"
+                : connected
+                  ? "Connected"
+                  : "Not connected"}
           </span>
         </CardContent>
-        <CardFooter>
+        <CardFooter className="flex-col items-start gap-2">
           {connected ? (
             <Button variant="outline" onClick={handleDisconnect} disabled={pending}>
               Disconnect
             </Button>
           ) : (
-            <Button onClick={handleConnect} disabled={pending}>
+            <Button onClick={handleConnect} disabled={pending || !configured}>
               {pending ? <Loader2 className="animate-spin" /> : null}
               Connect your Codex subscription
             </Button>
           )}
+          {!configured ? (
+            <p className="text-xs text-muted-foreground">
+              Connecting needs the codex-bridge service (CODEX_BRIDGE_URL / CODEX_BRIDGE_API_KEY),
+              which runs on a persistent host rather than serverless.
+            </p>
+          ) : null}
         </CardFooter>
       </Card>
 
