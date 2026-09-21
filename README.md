@@ -92,10 +92,10 @@ Point it at the repo root. Environment variables to set:
 
 Run `npx prisma migrate deploy` against the production database before first use, then seed it once with `npx tsx prisma/seed.ts`.
 
-The live deployment is <https://it-priorities-two.vercel.app>. Its Azure redirect URI — verified against the URL Better Auth actually generates, which is `<baseURL>/api/auth/callback/<providerId>` — is exactly:
+The live deployment is <https://it.aquatiq.com> (also reachable at <https://it-priorities-two.vercel.app>). Its Azure redirect URI — verified against the URL Better Auth actually generates, which is `<baseURL>/api/auth/callback/<providerId>` — is exactly:
 
 ```
-https://it-priorities-two.vercel.app/api/auth/callback/microsoft-entra-id
+https://it.aquatiq.com/api/auth/callback/microsoft-entra-id
 ```
 
 `BETTER_AUTH_SECRET` is not optional: without it Better Auth throws on every request and `/sign-in` takes the whole function down (exit 128), which looks like a build problem but is not one.

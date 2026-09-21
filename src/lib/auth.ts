@@ -35,8 +35,28 @@ const baseURL =
     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
     : undefined);
 
+/**
+ * Every host the app is reachable on must be trusted, or Better Auth rejects
+ * the sign-in POST with "Invalid origin" (403). BETTER_AUTH_URL is the
+ * canonical one; the Vercel-assigned domain is kept alongside it so the
+ * *.vercel.app URL keeps working after a custom domain is added, and
+ * BETTER_AUTH_TRUSTED_ORIGINS takes a comma-separated list for any others.
+ */
+const trustedOrigins = [
+  ...new Set(
+    [
+      baseURL,
+      process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : undefined,
+      ...(process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(",").map((o) => o.trim()) ?? []),
+    ].filter((origin): origin is string => Boolean(origin))
+  ),
+];
+
 export const auth = betterAuth({
   ...(baseURL ? { baseURL } : {}),
+  ...(trustedOrigins.length > 0 ? { trustedOrigins } : {}),
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // Dev-only escape hatch so the app is testable without a real Azure AD app
   // registration. Excluded from production builds — Microsoft is the only
