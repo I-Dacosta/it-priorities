@@ -1,26 +1,173 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "tw-shimmer";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --font-heading: var(--font-sans);
+  --color-lane-robert: var(--lane-robert);
+  --color-lane-robert-foreground: var(--lane-robert-foreground);
+  --color-lane-ima: var(--lane-ima);
+  --color-lane-ima-foreground: var(--lane-ima-foreground);
+  --color-brand-green: var(--brand-green);
+  --color-brand-green-foreground: var(--brand-green-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  @keyframes collapsible-down {
+  from {
+    height: 0;
+    }
+  to {
+    height: var(--radix-collapsible-content-height, var(--collapsible-panel-height, auto));
+    }
+  }
+  @keyframes collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height, var(--collapsible-panel-height, auto));
+    }
+  to {
+    height: 0;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+:root {
+  /* Aquatiq brand palette */
+  --background: #ffffff;
+  --foreground: #333333; /* Aquatiq Dark */
+  --card: #ffffff;
+  --card-foreground: #333333;
+  --popover: #ffffff;
+  --popover-foreground: #333333;
+  --primary: #151f6d; /* Aquatiq Blue */
+  --primary-foreground: #ffffff;
+  --secondary: #e3ebf2; /* Light Glaucous */
+  --secondary-foreground: #151f6d;
+  --muted: #f4f6f9;
+  --muted-foreground: #5b6472;
+  --accent: #fdead8; /* Light Tangerine */
+  --accent-foreground: #333333;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: #e1e6ef;
+  --input: #e1e6ef;
+  --ring: #4e60ad; /* Glaucous */
+  --chart-1: #151f6d;
+  --chart-2: #4e60ad;
+  --chart-3: #f6af6e;
+  --chart-4: #556d5a;
+  --chart-5: #8891c7;
+  --radius: 0.75rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #333333;
+  --sidebar-primary: #151f6d;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e3ebf2;
+  --sidebar-accent-foreground: #151f6d;
+  --sidebar-border: #e1e6ef;
+  --sidebar-ring: #4e60ad;
+
+  /* Board lanes */
+  --lane-robert: #e3ebf2; /* Light Glaucous */
+  --lane-robert-foreground: #151f6d;
+  --lane-ima: #fdead8; /* Light Tangerine */
+  --lane-ima-foreground: #8a5a26;
+  --brand-green: #e3f2e5; /* Light Green */
+  --brand-green-foreground: #556d5a;
 }
+
+.dark {
+  --background: #12151f;
+  --foreground: #e7e9f0;
+  --card: #1a1e2c;
+  --card-foreground: #e7e9f0;
+  --popover: #1a1e2c;
+  --popover-foreground: #e7e9f0;
+  --primary: #8891c7; /* lightened Aquatiq Blue for contrast on dark */
+  --primary-foreground: #10142c;
+  --secondary: #242a3d;
+  --secondary-foreground: #e7e9f0;
+  --muted: #242a3d;
+  --muted-foreground: #9aa2b8;
+  --accent: #3a3320;
+  --accent-foreground: #f6af6e;
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: #4e60ad;
+  --chart-1: #8891c7;
+  --chart-2: #4e60ad;
+  --chart-3: #f6af6e;
+  --chart-4: #7fa088;
+  --chart-5: #556d5a;
+  --sidebar: #161a26;
+  --sidebar-foreground: #e7e9f0;
+  --sidebar-primary: #8891c7;
+  --sidebar-primary-foreground: #10142c;
+  --sidebar-accent: #242a3d;
+  --sidebar-accent-foreground: #e7e9f0;
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: #4e60ad;
+
+  --lane-robert: #202844;
+  --lane-robert-foreground: #b7c1ea;
+  --lane-ima: #3a3320;
+  --lane-ima-foreground: #f6af6e;
+  --brand-green: #1f2b21;
+  --brand-green-foreground: #8fb495;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));
+
+@custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));

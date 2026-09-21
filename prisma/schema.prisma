@@ -1,0 +1,118 @@
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Owner {
+  ROBERT
+  IMA
+}
+
+/// App-level allow-list + attribution. Independent of Better Auth's own
+/// User model (joined by lower-cased email, not by id) so auth internals
+/// never leak into app domain logic.
+
+model AllowedUser {
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  name                String?
+  preferredCodexModel String?
+  disabledAt          DateTime?
+  createdAt           DateTime  @default(now())
+  lastSignInAt        DateTime?
+
+  addedById    String?
+  addedBy      AllowedUser?  @relation("UserInvites", fields: [addedById], references: [id])
+  invitedUsers AllowedUser[] @relation("UserInvites")
+
+  createdTasks Task[] @relation("TaskCreatedBy")
+  updatedTasks Task[] @relation("TaskUpdatedBy")
+
+  @@index([disabledAt])
+}
+
+model Task {
+  id        String   @id @default(cuid())
+  title     String
+  notes     String   @default("")
+  owner     Owner
+  position  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdById String
+  createdBy   AllowedUser @relation("TaskCreatedBy", fields: [createdById], references: [id])
+
+  updatedById String?
+  updatedBy   AllowedUser? @relation("TaskUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([owner, position])
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
