@@ -87,6 +87,10 @@ async function openSandbox(userId: string, timeout: number) {
     timeout,
     resume: true,
     persistent: true,
+    // Same region as the functions and the database. Each user's Codex
+    // credential lives on this sandbox's disk, so it stays in the EU rather
+    // than defaulting to Washington.
+    region: "fra1",
   });
   await ensureReady(sandbox);
   return sandbox;
