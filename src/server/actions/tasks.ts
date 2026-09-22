@@ -85,5 +85,11 @@ export async function reorderBoard(changes: z.infer<typeof reorderBoardSchema>) 
     )
   );
 
-  revalidatePath("/");
+  // Deliberately no revalidatePath here. This fires on every drop, and "/" is
+  // a dynamic route whose Board seeds its state from a lazy useState
+  // initializer — so revalidating re-renders the whole page server-side and
+  // ships an RSC payload the client then throws away. That round trip on each
+  // drag is what made reordering feel unresponsive. The board already holds
+  // the authoritative order locally, and a fresh navigation re-reads the
+  // database anyway.
 }
