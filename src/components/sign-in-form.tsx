@@ -17,9 +17,15 @@ function MicrosoftMark() {
   );
 }
 
-export function SignInForm({ microsoftConfigured }: { microsoftConfigured: boolean }) {
+export function SignInForm({
+  microsoftConfigured,
+  initialError = null,
+}: {
+  microsoftConfigured: boolean;
+  initialError?: string | null;
+}) {
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
 
   async function handleSignIn() {
     setPending(true);

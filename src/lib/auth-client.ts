@@ -14,5 +14,11 @@ export function signInWithMicrosoft() {
   return authClient.signIn.social({
     provider: "microsoft-entra-id",
     callbackURL: "/",
+    // Without this, anything that fails after Microsoft redirects back — a
+    // rejected token exchange, a mismatched state — lands on Better Auth's own
+    // /api/auth/error page and bounces to sign-in showing nothing, which is
+    // indistinguishable from being signed out. Send failures to our own page
+    // so the reason is actually visible.
+    errorCallbackURL: "/sign-in",
   });
 }
