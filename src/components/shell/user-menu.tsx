@@ -7,7 +7,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -35,10 +34,17 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="flex flex-col">
+        {/*
+          Deliberately not DropdownMenuLabel: that renders Base UI's
+          Menu.GroupLabel, which throws ("MenuGroupContext is missing") unless
+          it sits inside a Menu.Group. This is an account header rather than a
+          label for a group of items, so it is plain markup carrying the same
+          styles the label component would have applied.
+        */}
+        <div className="flex flex-col px-1.5 py-1 text-xs font-medium text-muted-foreground">
           <span className="font-medium">{name || email}</span>
           <span className="text-xs font-normal text-muted-foreground">{email}</span>
-        </DropdownMenuLabel>
+        </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link href="/settings/assistant" />}>
           Assistant settings
