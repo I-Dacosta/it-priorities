@@ -97,6 +97,34 @@ https://it.aquatiq.com/api/auth/callback/microsoft-entra-id
 
 `BETTER_AUTH_SECRET` is not optional: without it Better Auth throws on every request and `/sign-in` takes the whole function down (exit 128), which looks like a build problem but is not one.
 
+### Cold starts and keeping the compute warm
+
+Measured after 7 minutes idle: about 1.2s for Vercel to boot the function and
+about 0.9s for Neon to wake from scale-to-zero, so roughly 2.3s on the first
+request after a quiet spell. Every request after that is ~170-200ms.
+
+Neither half can be switched off on the current plans. Neon Free suspends an
+idle compute after 5 minutes and only Launch and Scale can disable it; Vercel
+Hobby allows only **daily** cron jobs, so the app cannot schedule its own
+warm-up. (A sub-daily `crons` entry in `vercel.json` does not merely warn — it
+fails config validation and takes the whole deployment down with it.)
+
+`GET /api/keep-warm` exists for this: it runs `SELECT 1` and requires
+`Authorization: Bearer $CRON_SECRET`. Point any scheduler at it every **4
+minutes**, inside Neon's 5-minute suspend window. Add a second job hitting `/`
+if the board itself should stay warm too — unauthenticated it just redirects
+and touches no database.
+
+**Restrict the schedule to working hours.** A compute hour is CU × wall-clock
+hours and the Free plan allows 100 CU-hours per month. At the 0.25 CU minimum,
+weekday business hours costs roughly 50 of them; running around the clock needs
+about 182, which would exhaust the quota and take the database down before the
+month ended.
+
+`CRON_SECRET` is stored as a readable config value rather than a sensitive one,
+precisely so it can be copied out of the Vercel dashboard into whichever
+scheduler calls it.
+
 ### Database (current production setup)
 
 Production Postgres is **Neon via the Vercel Marketplace**, free plan, region `fra1` (`eu-central-1`, Frankfurt — EU residency, which matters given NIS2 is on this very board). It's connected to Production and Preview only, so local development keeps using the Docker Postgres.
