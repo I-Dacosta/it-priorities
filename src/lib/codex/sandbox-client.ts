@@ -1,4 +1,5 @@
 import "server-only";
+import { headers } from "next/headers";
 import { Sandbox } from "@vercel/sandbox";
 import { DRIVER_SOURCE } from "./driver";
 
@@ -48,8 +49,45 @@ const CHAT_SESSION_MS = 10 * 60 * 1000;
 const BASE_INSTRUCTIONS =
   "You are the assistant inside Aquatiq's IT Priorities board. Answer the supplied conversation directly, using the board context you're given when relevant. Do not use tools, access files, run commands, or modify anything. Return only the answer.";
 
+/**
+ * On Vercel the OIDC token the Sandbox SDK authenticates with arrives per
+ * request as the `x-vercel-oidc-token` header — it is NOT in process.env,
+ * which only carries it during builds and locally after `vercel env pull`.
+ * Checking the environment variable alone therefore reports every production
+ * deployment as unconfigured, which is exactly what it used to do.
+ */
 export function isCodexConfigured() {
-  return Boolean(process.env.VERCEL_OIDC_TOKEN?.trim() || process.env.VERCEL_TOKEN?.trim());
+  return Boolean(
+    process.env.VERCEL ||
+      process.env.VERCEL_OIDC_TOKEN?.trim() ||
+      process.env.VERCEL_TOKEN?.trim()
+  );
+}
+
+/**
+ * The SDK reads the token from Vercel's request context, and falls back to
+ * process.env. Copying the header across covers the case where that context
+ * doesn't reach us through Next's own request handling.
+ */
+async function bridgeOidcToken() {
+  if (process.env.VERCEL_OIDC_TOKEN?.trim()) return;
+  try {
+    const token = (await headers()).get("x-vercel-oidc-token");
+    if (token) process.env.VERCEL_OIDC_TOKEN = token;
+  } catch {
+    // Outside a request scope there is nothing to bridge; let the SDK decide.
+  }
+}
+
+/** Turns the SDK's auth failure into something that names the actual fix. */
+function rethrowAuthError(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("x-vercel-oidc-token") || message.includes("VERCEL_OIDC_TOKEN")) {
+    throw new Error(
+      "The assistant couldn't authenticate with Vercel Sandbox. Enable OIDC federation for this project under Settings → Security → Secure backend access."
+    );
+  }
+  throw error instanceof Error ? error : new Error(message);
 }
 
 function sandboxNameFor(userId: string) {
@@ -82,6 +120,7 @@ async function ensureReady(sandbox: Sandbox) {
 
 async function openSandbox(userId: string, timeout: number) {
   if (!isCodexConfigured()) throw new CodexNotConfiguredError();
+  await bridgeOidcToken();
   const sandbox = await Sandbox.getOrCreate({
     name: sandboxNameFor(userId),
     timeout,
@@ -99,9 +138,15 @@ async function openSandbox(userId: string, timeout: number) {
 /** Resumes an existing sandbox without creating one; null when the user has never connected. */
 async function findSandbox(userId: string) {
   if (!isCodexConfigured()) throw new CodexNotConfiguredError();
+  await bridgeOidcToken();
   try {
     return await Sandbox.get({ name: sandboxNameFor(userId), resume: true });
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // An auth failure must not be reported as "this user has no sandbox".
+    if (message.includes("x-vercel-oidc-token") || message.includes("VERCEL_OIDC_TOKEN")) {
+      rethrowAuthError(error);
+    }
     return null;
   }
 }
