@@ -146,6 +146,10 @@ DATABASE_URL="$DATABASE_URL_UNPOOLED" npx tsx prisma/seed.ts
 The running app uses the pooled `DATABASE_URL`, which is the right choice for serverless. Note that changing any environment variable needs a **redeploy** to take effect — Vercel injects them at build time, so setting a variable alone changes nothing.
 
 
+## Roadmap
+
+The next phase moves the server side to a Hostinger VPS and keeps Vercel for the static UI only, then adds tracking, notes, priorities, notifications and mail triage. It is planned, with phases, costs and open decisions, in [docs/platform-and-feature-plan.md](docs/platform-and-feature-plan.md).
+
 ## Known limitations (v1)
 
 - No live sync between two open browser tabs — the board updates on next navigation, not in real time. Fine at this scale (5 people, 2 lanes); a future iteration could add polling or SSE.
