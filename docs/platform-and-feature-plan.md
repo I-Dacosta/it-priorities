@@ -35,6 +35,8 @@ The browser talks to two hosts: Vercel for the files, the VPS for everything wit
 
 The browser calls `api.it.aquatiq.com` directly rather than through a Vercel rewrite. The assistant streams for minutes and mail features will use server-sent events; a proxy hop in that path is a timeout waiting to happen.
 
+Every variable the stack needs, per service and per phase, is listed in [deploy/vps/.env.example](../deploy/vps/.env.example).
+
 ## Decisions to make first
 
 Five decisions gate Phase 1. None needs code.
